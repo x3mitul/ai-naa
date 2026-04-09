@@ -1,0 +1,710 @@
+/* ========================================
+   Ainaa — Smart Mirror Design System
+   Pure Black Background + Glassmorphic HUD
+   ======================================== */
+
+/* Reset & Base */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Core palette — neon on black */
+  --bg: #000000;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.08);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.35);
+
+  /* Accent colors */
+  --accent-cyan: #00e5ff;
+  --accent-amber: #ffab00;
+  --accent-green: #00e676;
+  --accent-red: #ff1744;
+  --accent-purple: #d500f9;
+
+  /* Glassmorphism */
+  --glass-bg: rgba(10, 10, 10, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: 20px;
+
+  /* Typography */
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Orbitron', monospace;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-full: 9999px;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ========================================
+   Layout: Mirror Container
+   ======================================== */
+
+.mirror-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* The video feed — flipped to act as a mirror */
+.mirror-feed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  z-index: 1;
+  opacity: 0.92;
+}
+
+/* ========================================
+   HUD Overlay — Always on top of feed
+   ======================================== */
+
+.hud-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hud-overlay > * {
+  pointer-events: auto;
+}
+
+/* Top Row: Time + Status */
+.hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hud-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+/* ========================================
+   Glass Card — Reusable panel
+   ======================================== */
+
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  background: rgba(10, 10, 10, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ========================================
+   Clock Widget
+   ======================================== */
+
+.clock-widget {
+  text-align: left;
+}
+
+.clock-time {
+  font-family: var(--font-display);
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1;
+  color: var(--text-primary);
+  text-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
+}
+
+.clock-date {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ========================================
+   Posture Indicator
+   ======================================== */
+
+.posture-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 180px;
+}
+
+.posture-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transition: all 0.4s ease;
+  flex-shrink: 0;
+}
+
+.posture-dot.good {
+  background: var(--accent-green);
+  box-shadow: 0 0 12px var(--accent-green), 0 0 30px rgba(0, 230, 118, 0.3);
+}
+
+.posture-dot.bad {
+  background: var(--accent-amber);
+  box-shadow: 0 0 12px var(--accent-amber), 0 0 30px rgba(255, 171, 0, 0.3);
+  animation: pulse-amber 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-amber {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.posture-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.posture-value {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.posture-value.good {
+  color: var(--accent-green);
+}
+
+.posture-value.fair {
+  color: var(--accent-amber);
+}
+
+.posture-value.bad {
+  color: var(--accent-red);
+}
+
+/* ========================================
+   Voice Status Indicator
+   ======================================== */
+
+.voice-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.voice-rings {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-rings .ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid var(--accent-cyan);
+  opacity: 0;
+}
+
+.voice-rings.active .ring {
+  animation: ring-expand 1.5s ease-out infinite;
+}
+
+.voice-rings .ring:nth-child(1) { width: 10px; height: 10px; animation-delay: 0s; }
+.voice-rings .ring:nth-child(2) { width: 18px; height: 18px; animation-delay: 0.3s; }
+.voice-rings .ring:nth-child(3) { width: 26px; height: 26px; animation-delay: 0.6s; }
+
+.voice-core {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  z-index: 2;
+  box-shadow: 0 0 10px var(--accent-cyan);
+}
+
+.voice-rings.inactive .voice-core {
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+@keyframes ring-expand {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+
+.voice-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.voice-label.inactive {
+  color: var(--text-muted);
+}
+
+/* ========================================
+   Confidence Score (Bottom Left)
+   ======================================== */
+
+.confidence-score {
+  text-align: center;
+  min-width: 120px;
+}
+
+.confidence-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: var(--spacing-xs);
+}
+
+.confidence-value {
+  font-family: var(--font-display);
+  font-size: 2.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+
+.confidence-unit {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* ========================================
+   Ainaa Branding (Bottom Right)
+   ======================================== */
+
+.ainaa-brand {
+  text-align: right;
+}
+
+.ainaa-logo {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ainaa-tagline {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* ========================================
+   Analysis Panel (Center Popup)
+   ======================================== */
+
+.analysis-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+}
+
+.analysis-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(30px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  max-width: 440px;
+  width: 90%;
+  text-align: center;
+}
+
+.analysis-panel h2 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  letter-spacing: 3px;
+  color: var(--accent-cyan);
+  margin-bottom: var(--spacing-md);
+  text-transform: uppercase;
+}
+
+.analysis-rating {
+  font-family: var(--font-display);
+  font-size: 5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+
+.analysis-rating-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: var(--spacing-lg);
+}
+
+.analysis-text {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: var(--spacing-md);
+}
+
+.analysis-suggestion {
+  font-size: 0.85rem;
+  color: var(--accent-amber);
+  font-style: italic;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(255, 171, 0, 0.08);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent-amber);
+  text-align: left;
+}
+
+.analysis-close {
+  margin-top: var(--spacing-lg);
+  display: inline-block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  transition: all 0.2s;
+}
+
+.analysis-close:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+/* ========================================
+   Toast / Voice Transcript
+   ======================================== */
+
+.transcript-toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  max-width: 500px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transcript-toast .highlight {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+/* ========================================
+   Offline / Fallback State
+   ======================================== */
+
+.offline-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  gap: var(--spacing-md);
+}
+
+/* ========================================
+   Greeting Overlay
+   ======================================== */
+
+.greeting-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: greeting-fade 3.5s ease-in-out forwards;
+}
+
+.greeting-logo {
+  font-family: var(--font-display);
+  font-size: 5rem;
+  font-weight: 700;
+  letter-spacing: 12px;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple), var(--accent-cyan));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 2s linear infinite;
+}
+
+.greeting-tagline {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-top: var(--spacing-md);
+}
+
+@keyframes greeting-fade {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; pointer-events: none; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ========================================
+   AI Response Toast
+   ======================================== */
+
+.ai-response-toast {
+  position: fixed;
+  bottom: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  background: rgba(0, 229, 255, 0.08);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  max-width: 550px;
+  text-align: center;
+  line-height: 1.5;
+  animation: toast-in 0.3s ease-out;
+}
+
+.ai-response-toast .highlight {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ========================================
+   Voice Activate Button
+   ======================================== */
+
+.voice-activate-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  border: 1px solid var(--accent-cyan);
+  animation: pulse-border 2s ease-in-out infinite;
+  font-family: var(--font-body);
+}
+
+.voice-activate-btn:hover {
+  background: rgba(0, 229, 255, 0.1);
+}
+
+.voice-activate-btn .voice-label {
+  color: var(--accent-cyan);
+  font-size: 0.72rem;
+  letter-spacing: 1.5px;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(0, 229, 255, 0.3); }
+  50% { border-color: rgba(0, 229, 255, 0.8); }
+}
+
+/* ========================================
+   Rich Styling Profile (Grid & Layouts)
+   ======================================== */
+
+.analysis-panel {
+  max-width: 500px;
+  width: 90%;
+  padding: 2rem;
+}
+
+.analysis-rating-container {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  margin-bottom: 20px;
+}
+
+.style-badge {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s ease;
+}
+
+.style-badge:hover {
+  background: rgba(0, 229, 255, 0.05);
+  border-color: rgba(0, 229, 255, 0.3);
+}
+
+.badge-icon {
+  font-size: 1.2rem;
+  opacity: 0.8;
+}
+
+.badge-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.badge-value {
+  font-size: 0.9rem;
+  color: var(--accent-cyan);
+  font-weight: 500;
+  margin-left: auto;
+  text-align: right;
+}
+
+.recommendations {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 25px;
+}
+
+.rec-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 15px;
+  font-size: 0.85rem;
+}
+
+.rec-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.rec-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.rec-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.color-pill {
+  background: rgba(183, 107, 255, 0.15);
+  border: 1px solid rgba(183, 107, 255, 0.3);
+  color: #e4ccff;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
