@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <h1>🪞 Ainaa (Aether Mirror Pro v3.5)</h1>
+  <h1>🪞 Ainaa (Aether Mirror Pro)</h1>
   <p><strong>Reflecting the Best Version of You</strong></p>
   <p>An AI-powered Smart Mirror that tracks posture, profiles styling traits, and enables touch-free interaction using high-performance Edge AI and Computer Vision.</p>
 </div>
@@ -11,7 +11,7 @@
 
 **Ainaa** is a production-ready "software mirror" designed for high-end digital mirror hardware. It leverages **100% Local Inference** for its core computer vision pipeline, ensuring zero latency and absolute user privacy.
 
-### 🚀 Pro v3.5 Features
+### 🚀 Pro Features
 - **Studio Mode (New)**: Uses MediaPipe Selfie Segmentation to replace messy room backgrounds with a sleek, dark studio gradient in real-time.
 - **Gesture Control (New)**: Interact touch-free! Simply show an "Open Palm" gesture to Ainaa to trigger an instant outfit and style analysis.
 - **Biomechanical Posture Engine**: Tracks 33 skeletal landmarks to monitor neck inclination, shoulder tilt, and spine alignment with a live 0-100 composite score.
