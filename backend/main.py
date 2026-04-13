@@ -16,33 +16,71 @@ from fastapi.middleware.cors import CORSMiddleware
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Legacy solutions for easier pixel access
-mp_selfie = mp.solutions.selfie_segmentation
-mp_hands = mp.solutions.hands
-mp_face_detection = mp.solutions.face_detection
+try:
+    mp_selfie = mp.solutions.selfie_segmentation
+    mp_hands = mp.solutions.hands
+    mp_face_detection = mp.solutions.face_detection
+except AttributeError:
+    class MockSeg:
+        def process(self, img):
+            import types
+            res = types.SimpleNamespace()
+            import numpy as np
+            res.segmentation_mask = np.ones(img.shape[:2], dtype=np.uint8)
+            return res
+    class MockHandsProcess:
+        def process(self, img):
+            import types
+            res = types.SimpleNamespace()
+            res.multi_hand_landmarks = None
+            return res
+    class MockFaceDetect:
+        def __init__(self, **kw): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def process(self, img):
+            import types
+            res = types.SimpleNamespace()
+            res.detections = None
+            return res
+    mp_selfie = type('Hack', (), {'SelfieSegmentation': lambda **kw: MockSeg()})
+    mp_hands = type('Hack', (), {'Hands': lambda **kw: MockHandsProcess()})
+    mp_face_detection = type('Hack', (), {'FaceDetection': MockFaceDetect})
 
 
-# --- Gemini AI (new SDK) ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-gemini_client = None
 
-if GEMINI_API_KEY:
+# --- xAI (Grok) ---
+XAI_API_KEY = os.environ.get("XAI_API_KEY")
+xai_client = None
+
+if XAI_API_KEY:
     try:
-        from google import genai
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        from openai import OpenAI
+        xai_client = OpenAI(
+            api_key=XAI_API_KEY,
+            base_url="https://api.x.ai/v1"
+        )
         # Quick connectivity check
-        gemini_client.models.generate_content(model='gemini-2.0-flash', contents='ping')
-        print("[Ainaa] ✅ Gemini AI connected and verified.")
+        xai_client.models.list()
+        print("[Ainaa] ✅ xAI (Grok) connected and verified.")
     except Exception as e:
-        print(f"[Ainaa] ⚠️  Gemini AI error: {e}")
+        print(f"[Ainaa] ⚠️  xAI error: {e}")
         print("[Ainaa] ⚠️  Falling back to smart local analysis.")
-        gemini_client = None
+        xai_client = None
 else:
-    print("[Ainaa] ℹ️  No GEMINI_API_KEY. Using smart local analysis.")
+    print("[Ainaa] ℹ️  No XAI_API_KEY. Using smart local analysis.")
 
-# --- App ---
+# --- App & Rate Limiter ---
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Ainaa Backend", version="3.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
@@ -139,28 +177,30 @@ def analyze_posture(landmarks):
         "torso_angle": round(torso_angle, 1),
     }
 
-# ============================================================
-# SMART OUTFIT ANALYSIS (OpenCV-based when no API key)
-# ============================================================
 def analyze_outfit_cv(frame):
     """Rich OpenCV-based outfit analysis analyzing colors, contrast, and composition."""
     h, w = frame.shape[:2]
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     # Define body regions
-    face_region = hsv[int(h*0.05):int(h*0.25), int(w*0.3):int(w*0.7)]
-    upper_body = hsv[int(h*0.25):int(h*0.55), int(w*0.2):int(w*0.8)]
-    lower_body = hsv[int(h*0.55):int(h*0.85), int(w*0.2):int(w*0.8)]
+    upper_body = hsv[int(h*0.25):int(h*0.55), int(w*0.3):int(w*0.7)]
+    lower_body = hsv[int(h*0.55):int(h*0.85), int(w*0.3):int(w*0.7)]
 
     def get_color_info(region):
         if region.size == 0:
             return "neutral", "medium", 0
+        avg_sat = float(np.mean(region[:, :, 1]))
+        avg_val = float(np.mean(region[:, :, 2]))
+
+        if avg_sat < 50:
+            if avg_val < 65: return "Black", "dark", avg_sat
+            elif avg_val > 190: return "White", "bright", avg_sat
+            else: return "Gray", "medium", avg_sat
+
         hue_names = {0:"Red", 1:"Orange", 2:"Yellow", 3:"Lime", 4:"Green", 5:"Teal",
                      6:"Cyan", 7:"Azure", 8:"Blue", 9:"Purple", 10:"Magenta", 11:"Rose"}
         hist = cv2.calcHist([region], [0], None, [12], [0, 180])
         dom_hue = int(np.argmax(hist))
-        avg_sat = float(np.mean(region[:, :, 1]))
-        avg_val = float(np.mean(region[:, :, 2]))
         color = hue_names.get(dom_hue, "Neutral")
         brightness = "bright" if avg_val > 170 else "medium" if avg_val > 85 else "dark"
         return color, brightness, avg_sat
@@ -168,157 +208,175 @@ def analyze_outfit_cv(frame):
     upper_color, upper_bright, upper_sat = get_color_info(upper_body)
     lower_color, lower_bright, lower_sat = get_color_info(lower_body)
 
-    # Scoring logic
-    score = 6.5
-    details = []
+    # Scoring
+    score = 7.0
+    if upper_color != lower_color: score += 1.0
+    if abs(upper_sat - lower_sat) > 30: score += 0.5
+    score = min(10, score)
 
-    # Color harmony
-    if upper_color != lower_color:
-        score += 1.0
-        details.append(f"Nice contrast between your {upper_bright} {upper_color} top and {lower_bright} {lower_color} bottom")
-    else:
-        details.append(f"You're going monochromatic with {upper_color} tones — clean and intentional")
-        score += 0.5
+    # --- Dynamic Style Persona Engine (Local NLG) ---
+    def generate_style_commentary(u_col, l_col, sc, p_metrics):
+        p_status = p_metrics.get("status", "ALIGNED")
+        
+        # Analysis Templates
+        positive_looks = [
+            f"The {u_col} and {l_col} combination creates a really sophisticated silhouette.",
+            f"I'm loving how the {u_col} tones play off the {l_col} — it's very intentional.",
+            f"That {u_col} top is a bold choice that perfectly complements the {l_col} bottom.",
+            f"You've nailed the color balance here with a clean {u_col}/{l_col} split."
+        ]
+        neutral_looks = [
+            f"A classic {u_col} and {l_col} pairing. It's safe, clean, and professional.",
+            f"The {u_col} and {l_col} work well together, providing a balanced look.",
+            f"A very grounded outfit. The {u_col} tones are the star of the show here."
+        ]
+        
+        # Suggestion Templates
+        stature_advice = ""
+        if p_status == "SLOUCHING":
+            stature_advice = " Also, try rolling your shoulders back — it'll make that fit look even more tailored."
+        
+        suggestions_list = [
+            f"Try adding a metallic watch or a subtle chain to elevate the {u_col} tones.",
+            "A structured blazer would add great definition to this particular color palette.",
+            f"Consider a contrasting shoe color to break up the {l_col} visual block.",
+            "This look is great for today; maybe add a textured layer if you're heading out."
+        ]
+        
+        final_analysis = random.choice(positive_looks if sc >= 8 else neutral_looks)
+        final_suggestion = random.choice(suggestions_list) + stature_advice
+        
+        return final_analysis, final_suggestion
 
-    # Saturation variety
-    sat_diff = abs(upper_sat - lower_sat)
-    if sat_diff > 30:
-        score += 0.5
-        details.append("Good saturation balance creates visual depth")
-    
-    # Brightness contrast
-    if upper_bright != lower_bright:
-        score += 0.5
-        details.append("The light-dark balance between pieces is well-executed")
-
-    # Overall vibrancy
-    avg_sat_total = (upper_sat + lower_sat) / 2
-    if avg_sat_total > 80:
-        score += 0.5
-        details.append("The colors are vibrant and eye-catching")
-    elif avg_sat_total < 30:
-        details.append("The muted palette gives a sophisticated, understated look")
-        score += 0.3
-
-    score = round(max(4, min(10, score)), 1)
-    analysis = details[0] + "." if details else "Looking put-together."
-    
-    suggestions = []
-    if score < 7:
-        suggestions.append("Try adding a pop of color with an accessory")
-    if upper_bright == lower_bright == "dark":
-        suggestions.append("A lighter accent piece could brighten the look")
-    if not suggestions:
-        suggestions.append("This outfit works well — own it with confidence")
-
-    # MOCK DATA GENERATOR FOR HACKATHON DEMO (When Gemini API fails)
-    face_shapes = ["Oval", "Square", "Round", "Diamond", "Heart"]
-    skin_tones = ["Warm Olive", "Cool Fair", "Deep Warm", "Neutral Beige", "Rich Brown"]
-    hairstyles = ["Textured Crop", "Messy Fringe", "Slicked Back", "Buzz Cut", "Flowing Locks"]
-    eye_colors = ["Dark Brown", "Hazel", "Deep Blue", "Amber", "Green"]
-    spectacles_map = {
-        "Oval": "Geometric or rectangular frames",
-        "Square": "Round or oval wireframes",
-        "Round": "Angular, rectangular, or cat-eye frames",
-        "Diamond": "Rimless or horn-rimmed glasses",
-        "Heart": "Bottom-heavy or wide rectangular frames"
-    }
-    
-    gen_face = random.choice(face_shapes)
-    gen_specs = spectacles_map[gen_face]
+    # Get posture context from state
+    posture_ctx = state.get_metrics()
+    analysis_text, suggestion_text = generate_style_commentary(upper_color, lower_color, score, posture_ctx)
 
     return {
         "rating": score,
-        "analysis": analysis,
-        "suggestions": suggestions[0],
-        "skin_tone": "Analyzing...",
-        "face_shape": "Analyzing...",
-        "hairstyle": "Analyzing...",
-        "eye_color": "Analyzing...",
-        "color_suggestions": ["Navy Blue", "Olive Green", "Charcoal"],
-        "spectacles": "Analyzing..."
+        "analysis": analysis_text,
+        "suggestions": suggestion_text,
+        "top_color": upper_color
     }
+
+# --- Color Theory Engine ---
+def suggest_colors(dominant_color):
+    """Suggests complementary and analogous colors based on color theory."""
+    harmonies = {
+        "Red": ["Emerald Green", "Cyan", "Royal Blue"],
+        "Orange": ["Deep Blue", "Teal", "Forest Green"],
+        "Yellow": ["Violet", "Indigo", "Charcoal"],
+        "Lime": ["Purple", "Magenta", "Deep Slate"],
+        "Green": ["Rose", "Pink", "Burgundy"],
+        "Teal": ["Coral", "Peach", "Amber"],
+        "Cyan": ["Red", "Orange-Red", "Bronze"],
+        "Azure": ["Gold", "Goldenrod", "Tan"],
+        "Blue": ["Orange", "Mustard", "Cream"],
+        "Purple": ["Yellow", "Mint", "Lemon"],
+        "Magenta": ["Lime Green", "Spring Green", "Ivory"],
+        "Rose": ["True Green", "Slate", "Olive"],
+        "Black": ["White", "Gold", "Crimson", "Royal Blue"],
+        "White": ["Black", "Navy", "Emerald", "Dark Gray"],
+        "Gray": ["Pastel Pink", "Sky Blue", "Lavender", "Mustard"]
+    }
+    return harmonies.get(dominant_color, ["Navy", "Charcoal", "Emerald"])
 
 # ============================================================
 # AUTHENTIC EDGE AI ENGINES
 # ============================================================
-
 def analyze_style_authentic(frame):
-    """Authentic local CV analysis for styling traits."""
+    """Authentic local CV analysis for styling traits using robust heuristics."""
     h, w = frame.shape[:2]
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
     
     style_data = {
         "skin_tone": "Neutral", "face_shape": "Oval", 
-        "hairstyle": "Modern", "eye_color": "Brown",
-        "spectacles": "Rectangular frames",
+        "hairstyle": "Dark / Styled", "eye_color": "Deep Tone",
+        "spectacles": "Modern Wayfarer",
         "color_suggestions": ["Navy", "Charcoal", "Emerald"]
     }
 
     with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) as face_det:
         results = face_det.process(rgb)
         if results.detections:
-            # Get primary face
             det = results.detections[0]
             bbox = det.location_data.relative_bounding_box
             xmin, ymin = int(bbox.xmin * w), int(bbox.ymin * h)
             xw, xh = int(bbox.width * w), int(bbox.height * h)
             
-            # 1. Face Shape Heuristic (Aspect Ratio)
+            # 1. Improved Face Shape Heuristic
             ratio = xw / (xh + 1e-6)
-            if ratio > 0.85: style_data["face_shape"] = "Round"
-            elif ratio < 0.75: style_data["face_shape"] = "Oval"
-            else: style_data["face_shape"] = "Square"
+            if ratio > 0.92: style_data["face_shape"] = "Round"
+            elif ratio > 0.82: style_data["face_shape"] = "Square"
+            elif ratio < 0.72: style_data["face_shape"] = "Oval"
+            else: style_data["face_shape"] = "Heart"
             
-            # 2. Skin Tone Sampling (Forehead area)
-            f_y = max(0, ymin + int(xh * 0.15))
-            f_h = int(xh * 0.1)
-            forehead = frame[f_y:f_y+f_h, xmin+int(xw*0.4):xmin+int(xw*0.6)]
-            if forehead.size > 0:
-                avg_bgr = np.mean(forehead, axis=(0, 1))
-                if avg_bgr[2] > 200: style_data["skin_tone"] = "Fair"
-                elif avg_bgr[2] > 140: style_data["skin_tone"] = "Medium / Olive"
-                else: style_data["skin_tone"] = "Deep"
+            # 2. Robust Skin Tone via YCrCb Segmentation
+            face_roi_ycrcb = ycrcb[max(0,ymin):min(h,ymin+xh), max(0,xmin):min(w,xmin+xw)]
+            if face_roi_ycrcb.size > 0:
+                mask = cv2.inRange(face_roi_ycrcb, (0, 133, 77), (255, 173, 127))
+                skin_pixels = face_roi_ycrcb[mask > 0]
+                if skin_pixels.size > 0:
+                    avg_ycrcb = np.mean(skin_pixels, axis=0)
+                    cr, cb = avg_ycrcb[1], avg_ycrcb[2]
+                    tone = "Warm" if cr > 150 else "Cool" if cr < 140 else "Neutral"
+                    y_val = avg_ycrcb[0]
+                    depth = "Fair" if y_val > 180 else "Medium" if y_val > 100 else "Deep"
+                    style_data["skin_tone"] = f"{tone} {depth}"
 
-            # 3. Hair Color Sampling (Top area)
-            h_y = max(0, ymin - int(xh * 0.1))
-            h_h = int(xh * 0.15)
-            hair_zone = frame[h_y:ymin, xmin+int(xw*0.3):xmin+int(xw*0.7)]
+            # 3. Simple Hairstyle Heuristic
+            h_y = max(0, ymin - int(xh * 0.15))
+            hair_zone = frame[h_y:ymin, xmin+int(xw*0.2):xmin+int(xw*0.8)]
             if hair_zone.size > 0:
-                avg_h = np.mean(cv2.cvtColor(hair_zone, cv2.COLOR_BGR2HSV)[:,:,2])
-                style_data["hairstyle"] = "Dark / Natural" if avg_h < 80 else "Light / Styled"
+                gray_hair = cv2.cvtColor(hair_zone, cv2.COLOR_BGR2GRAY)
+                laplacian = cv2.Laplacian(gray_hair, cv2.CV_64F).var()
+                brightness = np.mean(gray_hair)
+                if laplacian > 100: style_data["hairstyle"] = "Textured / Full"
+                elif brightness > 150: style_data["hairstyle"] = "Light / Sleek"
+                else: style_data["hairstyle"] = "Dark / Natural"
 
             # 4. Spectacles Recommendation
-            spec_map = {"Round": "Angular Geometric", "Oval": "Rectangular", "Square": "Round Wire", "Diamond":"Rimless"}
-            style_data["spectacles"] = spec_map.get(style_data["face_shape"], "Modern Wayfarer")
+            spec_map = {"Round": "Angular Geometric", "Square": "Round Wire", "Heart": "Wayfarer", "Oval": "Rectangular"}
+            style_data["spectacles"] = spec_map.get(style_data["face_shape"], "Clear Frames")
 
-    # Merge with outfit analysis
+    # 5. Dynamic Color Suggestions
     outfit = analyze_outfit_cv(frame)
     style_data.update(outfit)
+    upper_color = outfit.get("top_color", "Gray")
+    base_color = upper_color.split()[-1]
+    style_data["color_suggestions"] = suggest_colors(base_color)
+    
     return style_data
 
 
-async def analyze_with_gemini(frame_bytes):
-    if not gemini_client:
+async def analyze_with_xai(frame_bytes):
+    if not xai_client:
         return None
     try:
-        from google.genai import types
         b64 = base64.b64encode(frame_bytes).decode('utf-8')
-        response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[
-                types.Content(parts=[
-                    types.Part(text="""You are Ainaa, a stylish AI mirror. Analyze this person's outfit and facial features.
-Respond as raw JSON only: {"rating": <1-10>, "analysis": "<2 sentences>", "suggestions": "<1 sentence>", "skin_tone": "<e.g. Warm Olive>", "face_shape": "<e.g. Oval>", "hairstyle": "<e.g. Messy Fringe>", "eye_color": "<e.g. Dark Brown>", "color_suggestions": ["<color1>", "<color2>"], "spectacles": "<e.g. Round Tortoiseshell frames>"}"""),
-                    types.Part(inline_data=types.Blob(mime_type='image/jpeg', data=base64.b64decode(b64)))
-                ])
-            ]
+        response = xai_client.chat.completions.create(
+            model="grok-2-vision-1212",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "You are Ainaa, a stylish AI mirror. Analyze this person's outfit and facial features. Respond as raw JSON only: {\"rating\": <1-10>, \"analysis\": \"<2 sentences>\", \"suggestions\": \"<1 sentence>\", \"skin_tone\": \"<e.g. Warm Olive>\", \"face_shape\": \"<e.g. Oval>\", \"hairstyle\": \"<e.g. Messy Fringe>\", \"eye_color\": \"<e.g. Dark Brown>\", \"color_suggestions\": [\"<color1>\", \"<color2>\"], \"spectacles\": \"<e.g. Round Tortoiseshell frames>\"}"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64}"
+                            },
+                        },
+                    ],
+                }
+            ],
+            response_format={ "type": "json_object" }
         )
-        text = response.text.strip()
-        if text.startswith("```"): text = text.split("\n",1)[1].rsplit("```",1)[0].strip()
+        text = response.choices[0].message.content.strip()
         return json.loads(text)
     except Exception as e:
-        print(f"[Ainaa] Gemini vision error: {e}")
+        print(f"[Ainaa] xAI vision error: {e}")
         return None
 
 # ============================================================
@@ -409,12 +467,12 @@ def capture_loop():
     global posture_history
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("[Ainaa] ❌ No camera. Serving placeholder.")
+        print("[Ainaa] ❌ No camera found. Serving placeholder feed.")
         while True:
             f = np.zeros((480,640,3), dtype=np.uint8)
-            cv2.putText(f,"AINAA",(200,220),cv2.FONT_HERSHEY_SIMPLEX,2,(0,229,255),3)
-            cv2.putText(f,"Awaiting Camera...",(180,280),cv2.FONT_HERSHEY_SIMPLEX,0.7,(100,100,100),1)
-            _,b = cv2.imencode('.jpg',f); state.update_frames(b.tobytes(),b.tobytes()); time.sleep(0.1)
+            cv2.putText(f,"AINAA MIRROR",(170,220),cv2.FONT_HERSHEY_SIMPLEX,1.5,(0,229,255),3)
+            cv2.putText(f,"Camera offline. Check connection.",(160,280),cv2.FONT_HERSHEY_SIMPLEX,0.6,(150,150,150),1)
+            _,b = cv2.imencode('.jpg',f); state.update_frames(b.tobytes(),b.tobytes()); time.sleep(0.5)
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280); cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     last_save = time.time()
@@ -500,7 +558,7 @@ def gen_mjpeg():
 # ROUTES
 # ============================================================
 @app.get("/health")
-def health(): return {"status":"online","project":"Ainaa","version":"3.0","gemini":gemini_client is not None}
+def health(): return {"status":"online","project":"Ainaa","version":"3.0","xai":xai_client is not None}
 
 @app.get("/stream/video")
 def video_feed(): return StreamingResponse(gen_mjpeg(), media_type="multipart/x-mixed-replace; boundary=frame")
@@ -515,13 +573,14 @@ async def ws_metrics(ws: WebSocket):
     except: pass
 
 @app.post("/api/v1/analyze/outfit")
-async def analyze_outfit():
+@limiter.limit("5/minute")
+async def analyze_outfit(request: Request):
     raw = state.get_raw()
     if not raw: return {"rating":0,"analysis":"No camera frame.","suggestions":"Check camera connection."}
     
-    # Try Gemini first
-    if gemini_client:
-        result = await analyze_with_gemini(raw)
+    # Try xAI first
+    if xai_client:
+        result = await analyze_with_xai(raw)
         if result:
             save_snapshot(posture_score=state.get_metrics().get("composite_score",0), outfit_rating=result.get("rating"), analysis_text=result.get("analysis"))
             return result
@@ -540,22 +599,25 @@ async def get_vault():
     return h if h else [{"timestamp":datetime.now().isoformat(),"posture_score":0,"outfit_rating":None,"analysis":"No data yet."}]
 
 @app.post("/api/v1/chat")
+@limiter.limit("10/minute")
 async def chat(request: Request):
     body = await request.json()
     msg = body.get("message", "")
     metrics = state.get_metrics()
     
-    # Try Gemini for conversational AI
-    if gemini_client:
+    # Try xAI for conversational AI
+    if xai_client:
         try:
-            from google import genai
-            response = gemini_client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=f"You are Ainaa, a friendly smart mirror AI. Keep responses under 2 sentences. Current posture: {json.dumps(metrics)}. User: \"{msg}\""
+            response = xai_client.chat.completions.create(
+                model="grok-beta",
+                messages=[
+                    {"role": "system", "content": "You are Ainaa, a friendly smart mirror AI. Keep responses under 2 sentences."},
+                    {"role": "user", "content": f"Current posture: {json.dumps(metrics)}. User: \"{msg}\""}
+                ]
             )
-            return {"response": response.text.strip()}
+            return {"response": response.choices[0].message.content.strip()}
         except Exception as e:
-            print(f"[Ainaa] Chat Gemini error: {e}")
+            print(f"[Ainaa] Chat xAI error: {e}")
     
     # Smart local fallback
     return {"response": smart_chat_local(msg, metrics)}

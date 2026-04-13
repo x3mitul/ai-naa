@@ -50,8 +50,8 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate  # (or `venv\Scripts\activate` on Windows)
 
-# Install requirements (Assuming you have generated one, else see code)
-pip install fastapi uvicorn mediapipe opencv-python numpy google-genai
+# Install requirements
+pip install -r requirements.txt
 
 # Run the server
 python main.py
@@ -82,18 +82,18 @@ Once the interface loads, click **"TAP TO ENABLE VOICE"** (a browser requirement
 - *"Hey... what is my score"*
 - *"Hey... what time is it"*
 
-*(If you have a Gemini API key connected, the mirror can also engage in general contextual conversation about your appearance and wellness).*
+*(If you have an xAI (Grok) API key connected, the mirror can also engage in general contextual conversation about your appearance and wellness).*
 
 ---
 
-## 🧠 Smart Fallback System (Gemini)
+## 🧠 Smart Fallback System (xAI / Grok)
 
 By default, outfit analysis and chat run locally using sophisticated OpenCV segmentation and contextual rule engines.
 
 To unlock **Vision AI**, supply a Google Gemini API Key. The backend will detect it and gracefully upgrade its capabilities:
 
 ```bash
-export GEMINI_API_KEY="your_api_key_here"
+export XAI_API_KEY="your_api_key_here"
 # then run python main.py
 ```
 
@@ -105,7 +105,7 @@ If your quota is depleted, Ainaa silently falls back to local models without cra
 * **Frontend**: React, Vite, Vanilla CSS Design System, WebRTC, Web Speech API
 * **Backend**: Python, FastAPI, WebSockets
 * **Computer Vision**: OpenCV, MediaPipe Tasks API
-* **AI Engine**: Google GenAI SDK (Gemini-2.0-flash), Local OpenCV heuristics
+* **AI Engine**: OpenAI SDK (xAI / Grok-2), Local OpenCV heuristics
 * **Database**: SQLite3
 
 ---
