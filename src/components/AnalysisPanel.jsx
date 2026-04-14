@@ -5,14 +5,14 @@ export default function AnalysisPanel({ data, onClose }) {
     <div className="analysis-overlay" onClick={onClose} id="analysis-overlay">
       <div className="analysis-panel" onClick={(e) => e.stopPropagation()}>
         <h2>Style Analysis</h2>
-        
+
         <div className="analysis-rating-container">
           <div className="analysis-rating">{data.rating}</div>
           <div className="analysis-rating-label">out of 10</div>
         </div>
-        
+
         <p className="analysis-text">{data.analysis}</p>
-        
+
         {/* New Styling Profile Grid */}
         {(data.skin_tone || data.face_shape) && (
           <div className="style-grid">
@@ -60,7 +60,7 @@ export default function AnalysisPanel({ data, onClose }) {
         </div>
 
         <div className="analysis-suggestion">💡 {data.suggestions}</div>
-        
+
         <button className="analysis-close" onClick={onClose}>Dismiss</button>
       </div>
     </div>
