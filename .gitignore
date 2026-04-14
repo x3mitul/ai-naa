@@ -6,7 +6,6 @@ dist-ssr/
 
 # Python
 backend/venv/
-backend/venv_new/
 backend/__pycache__/
 backend/*.pyc
 backend/.pytest_cache
