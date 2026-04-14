@@ -7,6 +7,7 @@ import VoiceStatus from './components/VoiceStatus'
 import ConfidenceScore from './components/ConfidenceScore'
 import AinaaBrand from './components/AinaaBrand'
 import AnalysisPanel from './components/AnalysisPanel'
+import HairstylePanel from './components/HairstylePanel'
 
 const BACKEND_URL = 'http://localhost:8000'
 const WS_URL = 'ws://localhost:8000/ws/metrics'
@@ -26,6 +27,8 @@ function App() {
   const [aiResponse, setAiResponse] = useState('')
   const [showAiResponse, setShowAiResponse] = useState(false)
   const [greeting, setGreeting] = useState(true)
+  const [hairstyleData, setHairstyleData] = useState(null)
+  const [isLoadingHairstyle, setIsLoadingHairstyle] = useState(false)
 
   const recognitionRef = useRef(null)
   const wsRef = useRef(null)
@@ -104,6 +107,37 @@ function App() {
     aiResponseTimerRef.current = setTimeout(() => setShowAiResponse(false), 8000)
   }, [])
 
+  // --- Hairstyle + Sunglasses Analysis ---
+  const fetchHairstyle = useCallback(async () => {
+    if (isLoadingHairstyle) return
+    setIsLoadingHairstyle(true)
+    speak('Analyzing your face shape and style…')
+    showResponseToast('🔍 Detecting face shape…')
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/analyze/hairstyle`, { method: 'POST' })
+      const data = await res.json()
+      setHairstyleData(data)
+      speak(`I detected a ${data.face_shape} face shape. Check out your personalized hairstyle and sunglasses recommendations!`)
+      showResponseToast(`✂️ ${data.face_shape} face — ${data.hairstyle_recommendations?.[0]?.name} suits you best!`)
+    } catch (err) {
+      console.error('[Ainaa] Hairstyle error:', err)
+      speak('Sorry, hairstyle analysis failed. Please try again.')
+    } finally {
+      setIsLoadingHairstyle(false)
+    }
+  }, [isLoadingHairstyle, speak, showResponseToast])
+
+  // --- Keyboard shortcut: H for hairstyle ---
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'h' || e.key === 'H') {
+        if (!hairstyleData && !isLoadingHairstyle) fetchHairstyle()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [fetchHairstyle, hairstyleData, isLoadingHairstyle])
+
   // --- Command Handler ---
   const handleCommand = useCallback(async (command) => {
     const cmd = command.toLowerCase().trim()
@@ -113,7 +147,9 @@ function App() {
     setIsProcessing(true)
 
     try {
-      if (cmd.match(/rate|outfit|fit|style|wear|look|dress|cloth/)) {
+      if (cmd.match(/hairstyle|haircut|hair style|suggest hair|face shape|what.*hair|hair.*suit/)) {
+        fetchHairstyle()
+      } else if (cmd.match(/rate|outfit|fit|style|wear|look|dress|cloth/)) {
         speak('Analyzing your outfit.')
         showResponseToast('🔍 Analyzing outfit...')
         const res = await fetch(`${BACKEND_URL}/api/v1/analyze/outfit`, { method: 'POST' })
@@ -277,6 +313,20 @@ function App() {
         </div>
         <div className="hud-bottom">
           <ConfidenceScore score={score} />
+          <button
+            className={`glass-card hair-style-btn ${isLoadingHairstyle ? 'loading' : ''}`}
+            id="hairstyle-btn"
+            onClick={fetchHairstyle}
+            disabled={isLoadingHairstyle}
+            title="Press H or click to get hairstyle & sunglasses recommendations"
+          >
+            {isLoadingHairstyle ? (
+              <span className="hair-btn-spinner" />
+            ) : (
+              <span className="hair-btn-icon">✂️</span>
+            )}
+            <span className="hair-btn-label">{isLoadingHairstyle ? 'Scanning…' : 'Hair & Sunnies'}</span>
+          </button>
           <VoiceStatus isListening={isListening} isProcessing={isProcessing} voiceEnabled={voiceEnabled} onActivate={startVoice} />
           <AinaaBrand />
         </div>
@@ -298,6 +348,13 @@ function App() {
 
       {/* Analysis Panel */}
       <AnalysisPanel data={analysisData} onClose={() => setAnalysisData(null)} />
+
+      {/* Hairstyle & Sunglasses Panel */}
+      <HairstylePanel
+        data={hairstyleData}
+        onClose={() => setHairstyleData(null)}
+        onAnalyzeOutfit={() => handleCommand('rate my outfit')}
+      />
     </div>
   )
 }
